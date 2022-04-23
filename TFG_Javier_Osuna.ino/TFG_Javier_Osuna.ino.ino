@@ -20,19 +20,22 @@
 
 #define CSpin D8    // Slave Select en pin digital 8 para tarjeta microSD
 
-// Define NTP properties
+// NTP propiedades
 #define NTP_OFFSET   3600      // Zona horaria, en España +1, es decir, 1h en segundos
 #define NTP_INTERVALO 2 * 1000    // Tiempo en milisegundos que se vuelve a solicitar la información
 #define NTP_ADDRESS  "hora.roa.es"  // pagina ntp donde obtener los datos
 
-Adafruit_INA219 ina219;
+Adafruit_INA219 ina219;         //Por defecto dirección I2C 0x40
+Adafruit_INA219 ina219_b(0x41); //Puente en R7
+Adafruit_INA219 ina219_c(0x44); //Puente en R6
+Adafruit_INA219 ina219_d(0x45); //Puente en R6 y R7
 
 // Objeto de la clase Adafruit_SSD1306 con el ancho, el alto, el puntero y el reset
 Adafruit_SSD1306 display(ANCHO_PANTALLA, ALTO_PANTALLA, &Wire, -1);
 
 File memoria;      // objeto donde se realiza el almacenamiento de datos del tipo File
 
-//iniciamos el cliente udp para su uso con el server NTP
+//iniciamos el cliente udp para su uso con el servidor NTP
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, NTP_ADDRESS, NTP_OFFSET, NTP_INTERVALO);
 
@@ -55,10 +58,13 @@ void setup(void)
 
   // Iniciar el INA219
   ina219.begin();  //por defecto, inicia a 32V y 2A
+  ina219_b.begin();
+  ina219_c.begin();
+  ina219_d.begin();
   // Opcionalmente, cambiar la sensibilidad del sensor
   //ina219.setCalibration_32V_1A();
   ina219.setCalibration_16V_400mA();
-  Serial.println("INA219 iniciado...");
+  Serial.println("Inicidando Sensores de Corriente ");
   delay(200);
 
   Serial.println("Iniciando pantalla OLED");
@@ -101,19 +107,30 @@ void setup(void)
 void loop(void)
 {
   float corriente_mA = 0;
+  float corriente_b_mA = 0;
+  float corriente_c_mA = 0;
+  float corriente_d_mA = 0;
 
   // Obtener mediciones
   corriente_mA = ina219.getCurrent_mA();
+  corriente_b_mA = ina219_b.getCurrent_mA();
+  corriente_c_mA = ina219_c.getCurrent_mA();
+  corriente_d_mA = ina219_d.getCurrent_mA();
 
   // Limpiar buffer
   display.clearDisplay();
-  display.setCursor(0, 0);
-  // Escribir texto
-  display.println("SENSOR 1");
-  display.setCursor(0, 15);
-  display.print(corriente_mA);
-  display.println(" mA");
-
+  //Sensor 1
+  display.setCursor(0, 0); display.println("SENSOR 1");
+  display.setCursor(0, 16); display.print(corriente_mA); display.println(" mA");
+  //Sensor 2
+  display.setCursor(64, 0); display.println("SENSOR 2");
+  display.setCursor(64, 16); display.print(corriente_b_mA); display.println(" mA");
+  //Sensor 3
+  display.setCursor(0, 32); display.println("SENSOR 3");
+  display.setCursor(0, 48); display.print(corriente_c_mA); display.println(" mA");
+  //Sensor 4
+  display.setCursor(64, 32); display.println("SENSOR 4");
+  display.setCursor(64, 48); display.print(corriente_d_mA); display.println(" mA");
   // Enviar a pantalla
   display.display();
 
@@ -148,14 +165,16 @@ void loop(void)
       memoria.print("FalloConexiónWifi ");
     }
 
-    memoria.print(" SENSOR 1: ");
-    memoria.print(corriente_mA);
-    memoria.println(" mA");
+    memoria.print("   SENSOR 1: "); memoria.print(corriente_mA);   memoria.print(" mA   ");
+    memoria.print("SENSOR 2: "); memoria.print(corriente_b_mA); memoria.print(" mA   ");
+    memoria.print("SENSOR 3: "); memoria.print(corriente_c_mA); memoria.print(" mA   ");
+    memoria.print("SENSOR 4: "); memoria.print(corriente_d_mA); memoria.println(" mA   ");
 
     // Mostrar mediciones
-    Serial.print(" SENSOR 1: ");
-    Serial.print(corriente_mA);
-    Serial.println(" mA");
+    Serial.print("Sensor 1:  "); Serial.print(corriente_mA);   Serial.print(" mA   ");
+    Serial.print("Sensor 2:  "); Serial.print(corriente_b_mA); Serial.print(" mA   ");
+    Serial.print("Sensor 3:  "); Serial.print(corriente_c_mA); Serial.print(" mA   ");
+    Serial.print("Sensor 4:  "); Serial.print(corriente_d_mA); Serial.println(" mA");
 
     memoria.close(); //cierra el archivo y garantiza que se escriban los datos correctamente
   }
