@@ -25,10 +25,10 @@
 #define NTP_INTERVALO 2 * 1000    // Tiempo en milisegundos que se vuelve a solicitar la información
 #define NTP_ADDRESS  "hora.roa.es"  // pagina ntp donde obtener los datos
 
-Adafruit_INA219 ina219;         //Por defecto dirección I2C 0x40
-Adafruit_INA219 ina219_b(0x41); //Puente en R7
-Adafruit_INA219 ina219_c(0x44); //Puente en R6
-Adafruit_INA219 ina219_d(0x45); //Puente en R6 y R7
+Adafruit_INA219 ina219;         //Por defecto dirección I2C 0x40 (Sensor 1)
+Adafruit_INA219 ina219_b(0x41); //Puente en R7 (Sensor 2)
+Adafruit_INA219 ina219_c(0x44); //Puente en R6 (Sensro 3)
+Adafruit_INA219 ina219_d(0x45); //Puente en R6 y R7 (Sensor 4)
 
 // Objeto de la clase Adafruit_SSD1306 con el ancho, el alto, el puntero y el reset
 Adafruit_SSD1306 display(ANCHO_PANTALLA, ALTO_PANTALLA, &Wire, -1);
@@ -64,6 +64,10 @@ void setup(void)
   // Opcionalmente, cambiar la sensibilidad del sensor
   //ina219.setCalibration_32V_1A();
   ina219.setCalibration_16V_400mA();
+  ina219_b.setCalibration_16V_400mA();
+  ina219_c.setCalibration_16V_400mA();
+  ina219_d.setCalibration_16V_400mA();
+  
   Serial.println("Inicidando Sensores de Corriente ");
   delay(200);
 
@@ -171,7 +175,7 @@ void loop(void)
     memoria.print("SENSOR 4: "); memoria.print(corriente_d_mA); memoria.println(" mA   ");
 
     // Mostrar mediciones
-    Serial.print("Sensor 1:  "); Serial.print(corriente_mA);   Serial.print(" mA   ");
+    Serial.print(" Sensor 1:  "); Serial.print(corriente_mA);   Serial.print(" mA   ");
     Serial.print("Sensor 2:  "); Serial.print(corriente_b_mA); Serial.print(" mA   ");
     Serial.print("Sensor 3:  "); Serial.print(corriente_c_mA); Serial.print(" mA   ");
     Serial.print("Sensor 4:  "); Serial.print(corriente_d_mA); Serial.println(" mA");
@@ -190,8 +194,12 @@ String Obtener_Fecha(time_t local)
 {
   // now format the Time variables into strings with proper names for month, day etc
   date = "";
+  if (day(local) < 10)
+  date += "0";
   date += day(local);
   date += "/";
+  if (month(local) < 10)
+  date += "0";
   date += month(local);
   date += "/";
   date += year(local);
