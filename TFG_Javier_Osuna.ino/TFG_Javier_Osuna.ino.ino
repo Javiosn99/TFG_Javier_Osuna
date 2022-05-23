@@ -14,6 +14,9 @@
 #include <TimeLib.h>
 #include <Timezone.h>
 
+#include <PubSubClient.h>
+#include <ArduinoJson.h>
+
 // Definir constantes
 #define ANCHO_PANTALLA 128 // ancho pantalla OLED
 #define ALTO_PANTALLA 64 // alto pantalla OLED
@@ -45,15 +48,34 @@ const char *password = "cdwu2208";
 String date;
 String t;
 
+// Define MQTT iot.ac.uma.es
+#define mqtt_server "iot.ac.uma.es"
+#define mqtt_user "infind"
+#define mqtt_password "zancudo"
+
+// ESP8266 WiFi
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+// Topics a emplear
+#define consumo_topic "TFG/Consumos"
+
 // Convertir las unidades de tiempo UTC en local
 TimeChangeRule CEST = {"CEST", Last, Sun, Mar, 2, 60};  //Horario de verano en europa central, "Eurepan Central Summer Time"
 TimeChangeRule CET = {"CET", Last, Sun, Oct, 3, 0};   //Horario de invierno
 Timezone CE(CEST, CET);
 
+struct conjunto_corrientes 
+{
+  float corriente_mA;
+  float corriente_b_mA;
+  float corriente_c_mA;
+  float corriente_d_mA;
+};
+
 void setup(void)
 {
   Serial.begin(115200);
-  uint32_t currentFrequency;
   delay(200);
 
   // Iniciar el INA219
@@ -89,7 +111,8 @@ void setup(void)
   delay(200);
 
   Serial.println("Inicializando tarjeta ...");  // texto en ventana de monitor
-  if (!SD.begin(CSpin)) {     // inicializacion de tarjeta SD
+  if (!SD.begin(CSpin)) 
+  {     // inicializacion de tarjeta SD
     Serial.println("fallo en inicializacion !");// si falla se muestra texto correspondiente y
     return;        // impide que el programa avance
   }
@@ -98,10 +121,13 @@ void setup(void)
 
   WiFi.begin(ssid, password); // nos conectamos al wifi
   // Esperamos hasta que se establezca la conexión wifi
-  while ( WiFi.status() != WL_CONNECTED ) {
+  while ( WiFi.status() != WL_CONNECTED ) 
+  {
     Serial.print ( "." );
     delay ( 500 );
   }
+  client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
 
   timeClient.begin();
 
@@ -110,31 +136,29 @@ void setup(void)
 
 void loop(void)
 {
-  float corriente_mA = 0;
-  float corriente_b_mA = 0;
-  float corriente_c_mA = 0;
-  float corriente_d_mA = 0;
+  struct conjunto_corrientes medidas;
 
   // Obtener mediciones
-  corriente_mA = ina219.getCurrent_mA();
-  corriente_b_mA = ina219_b.getCurrent_mA();
-  corriente_c_mA = ina219_c.getCurrent_mA();
-  corriente_d_mA = ina219_d.getCurrent_mA();
+  medidas.corriente_mA = ina219.getCurrent_mA();
+  medidas.corriente_b_mA = ina219_b.getCurrent_mA();
+  medidas.corriente_c_mA = ina219_c.getCurrent_mA();
+  medidas.corriente_d_mA = ina219_d.getCurrent_mA();
 
+  
   // Limpiar buffer
   display.clearDisplay();
   //Sensor 1
   display.setCursor(0, 0); display.println("SENSOR 1");
-  display.setCursor(0, 16); display.print(corriente_mA); display.println(" mA");
+  display.setCursor(0, 16); display.print(medidas.corriente_mA); display.println(" mA");
   //Sensor 2
   display.setCursor(64, 0); display.println("SENSOR 2");
-  display.setCursor(64, 16); display.print(corriente_b_mA); display.println(" mA");
+  display.setCursor(64, 16); display.print(medidas.corriente_b_mA); display.println(" mA");
   //Sensor 3
   display.setCursor(0, 32); display.println("SENSOR 3");
-  display.setCursor(0, 48); display.print(corriente_c_mA); display.println(" mA");
+  display.setCursor(0, 48); display.print(medidas.corriente_c_mA); display.println(" mA");
   //Sensor 4
   display.setCursor(64, 32); display.println("SENSOR 4");
-  display.setCursor(64, 48); display.print(corriente_d_mA); display.println(" mA");
+  display.setCursor(64, 48); display.print(medidas.corriente_d_mA); display.println(" mA");
   // Enviar a pantalla
   display.display();
 
@@ -169,16 +193,16 @@ void loop(void)
       memoria.print("FalloConexiónWifi ");
     }
 
-    memoria.print("   SENSOR 1: "); memoria.print(corriente_mA);   memoria.print(" mA   ");
-    memoria.print("SENSOR 2: "); memoria.print(corriente_b_mA); memoria.print(" mA   ");
-    memoria.print("SENSOR 3: "); memoria.print(corriente_c_mA); memoria.print(" mA   ");
-    memoria.print("SENSOR 4: "); memoria.print(corriente_d_mA); memoria.println(" mA   ");
+    memoria.print("   SENSOR 1: "); memoria.print(medidas.corriente_mA);   memoria.print(" mA   ");
+    memoria.print("SENSOR 2: "); memoria.print(medidas.corriente_b_mA); memoria.print(" mA   ");
+    memoria.print("SENSOR 3: "); memoria.print(medidas.corriente_c_mA); memoria.print(" mA   ");
+    memoria.print("SENSOR 4: "); memoria.print(medidas.corriente_d_mA); memoria.println(" mA   ");
 
     // Mostrar mediciones
-    Serial.print(" Sensor 1:  "); Serial.print(corriente_mA);   Serial.print(" mA   ");
-    Serial.print("Sensor 2:  "); Serial.print(corriente_b_mA); Serial.print(" mA   ");
-    Serial.print("Sensor 3:  "); Serial.print(corriente_c_mA); Serial.print(" mA   ");
-    Serial.print("Sensor 4:  "); Serial.print(corriente_d_mA); Serial.println(" mA");
+    Serial.print(" Sensor 1:  "); Serial.print(medidas.corriente_mA);   Serial.print(" mA   ");
+    Serial.print("Sensor 2:  "); Serial.print(medidas.corriente_b_mA); Serial.print(" mA   ");
+    Serial.print("Sensor 3:  "); Serial.print(medidas.corriente_c_mA); Serial.print(" mA   ");
+    Serial.print("Sensor 4:  "); Serial.print(medidas.corriente_d_mA); Serial.println(" mA");
 
     memoria.close(); //cierra el archivo y garantiza que se escriban los datos correctamente
   }
@@ -186,6 +210,14 @@ void loop(void)
   {
     Serial.println("error en apertura de datos.txt");  // texto de falla en apertura de archivo
   }
+  
+  if (!client.connected()) {
+    reconnect();
+  }
+
+  client.loop();
+  
+  client.publish(consumo_topic, SerializeMedidas(medidas).c_str(), true);
 
   delay(2000);
 }
@@ -222,4 +254,51 @@ String Obtener_Hora(time_t local)
     t += "0";
   t += second(local);
   return t;
+}
+
+void reconnect() {
+  // BUCLE DE CHECKING DE CONEXIÓN AL SERVICIO MQTT
+  while (!client.connected()) {
+    Serial.print("Intentando conectarse a MQTT...");
+    
+    // Generación del nombre del cliente en función de la dirección MAC y los ultimos 8 bits del contador temporal
+    String clientId = "ESP8266Client-";
+    clientId += String(ESP.getChipId());
+    Serial.print("Conectando a ");
+    Serial.print(mqtt_server);
+    Serial.print(" como ");
+    Serial.println(clientId);
+
+    // Intentando conectar
+    if (client.connect(clientId.c_str(), mqtt_user, mqtt_password)) {
+      Serial.println("Conectado");
+     
+    } else {
+      Serial.print("Conexión Fallida, rc=");
+      Serial.print(client.state());
+      Serial.println(" Volver a probar en 5 segundos");
+      // Espera 5s antes de reintentar conexión
+      delay(5000);
+    }
+  }
+
+}
+
+String SerializeMedidas(struct conjunto_corrientes medidas )
+{
+    String json;
+    StaticJsonDocument<512> doc;
+    doc["Sensor1"] = medidas.corriente_mA;
+    doc["Sensor2"] = medidas.corriente_b_mA;
+    doc["Sensor3"] = medidas.corriente_c_mA;
+    doc["Sensor4"] = medidas.corriente_d_mA;
+    serializeJson(doc, json);
+    Serial.println(json);
+    return json;
+}
+
+void callback(char* topic, byte* payload, unsigned int length)
+{
+
+  
 }
