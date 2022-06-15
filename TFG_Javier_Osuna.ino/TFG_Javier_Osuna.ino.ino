@@ -59,19 +59,25 @@ PubSubClient client(espClient);
 
 // Topics a emplear
 #define consumo_topic "TFG/Consumos"
+#define envio_datos_topic "TFG/Envio_datos"
+#define almacenamiento_datos_topic "TFG/Almacenamiento_datos"
 
 // Convertir las unidades de tiempo UTC en local
 TimeChangeRule CEST = {"CEST", Last, Sun, Mar, 2, 60};  //Horario de verano en europa central, "Eurepan Central Summer Time"
 TimeChangeRule CET = {"CET", Last, Sun, Oct, 3, 0};   //Horario de invierno
 Timezone CE(CEST, CET);
 
-struct conjunto_corrientes 
+struct conjunto_corrientes
 {
   float corriente_mA;
   float corriente_b_mA;
   float corriente_c_mA;
   float corriente_d_mA;
 };
+
+String payload_envio;
+String payload_almacenamiento;
+String topic_recibido;
 
 void setup(void)
 {
@@ -89,7 +95,7 @@ void setup(void)
   ina219_b.setCalibration_16V_400mA();
   ina219_c.setCalibration_16V_400mA();
   ina219_d.setCalibration_16V_400mA();
-  
+
   Serial.println("Inicidando Sensores de Corriente ");
   delay(200);
 
@@ -108,11 +114,13 @@ void setup(void)
   // Color del texto
   display.setTextColor(SSD1306_WHITE);
   // Posición del texto
+
+  display.setCursor(32, 16); display.println("CARGANDO DATOS");
   delay(200);
 
   Serial.println("Inicializando tarjeta ...");  // texto en ventana de monitor
-  if (!SD.begin(CSpin)) 
-  {     // inicializacion de tarjeta SD
+  if (!SD.begin(CSpin))
+  { // inicializacion de tarjeta SD
     Serial.println("fallo en inicializacion !");// si falla se muestra texto correspondiente y
     return;        // impide que el programa avance
   }
@@ -121,7 +129,7 @@ void setup(void)
 
   WiFi.begin(ssid, password); // nos conectamos al wifi
   // Esperamos hasta que se establezca la conexión wifi
-  while ( WiFi.status() != WL_CONNECTED ) 
+  while ( WiFi.status() != WL_CONNECTED )
   {
     Serial.print ( "." );
     delay ( 500 );
@@ -134,6 +142,109 @@ void setup(void)
   delay(200);
 }
 
+
+
+String Obtener_Fecha(time_t local)
+{
+  // now format the Time variables into strings with proper names for month, day etc
+  date = "";
+  if (day(local) < 10)
+    date += "0";
+  date += day(local);
+  date += "/";
+  if (month(local) < 10)
+    date += "0";
+  date += month(local);
+  date += "/";
+  date += year(local);
+  return date;
+}
+
+String Obtener_Hora(time_t local)
+{
+  t = "";
+  // format the time
+  if (hour(local) < 10)
+    t += "0";
+  t += hour(local);
+  t += ":";
+  if (minute(local) < 10) // add a zero if minute is under 10
+    t += "0";
+  t += minute(local);
+  t += ":";
+  if (second(local) < 10)
+    t += "0";
+  t += second(local);
+  return t;
+}
+
+void reconnect() {
+  // BUCLE DE CHECKING DE CONEXIÓN AL SERVICIO MQTT
+  while (!client.connected()) {
+    Serial.print("Intentando conectarse a MQTT...");
+
+    // Generación del nombre del cliente en función de la dirección MAC y los ultimos 8 bits del contador temporal
+    String clientId = "ESP8266Client-";
+    clientId += String(ESP.getChipId());
+    Serial.print("Conectando a ");
+    Serial.print(mqtt_server);
+    Serial.print(" como ");
+    Serial.println(clientId);
+
+    // Intentando conectar
+    if (client.connect(clientId.c_str(), mqtt_user, mqtt_password)) {
+      Serial.println("Conectado");
+      client.subscribe(envio_datos_topic);
+      client.subscribe(almacenamiento_datos_topic);
+
+    } else {
+      Serial.print("Conexión Fallida, rc=");
+      Serial.print(client.state());
+      Serial.println(" Volver a probar en 5 segundos");
+      // Espera 5s antes de reintentar conexión
+      delay(5000);
+    }
+  }
+
+}
+
+String SerializeMedidas(struct conjunto_corrientes medidas )
+{
+  String json;
+  StaticJsonDocument<512> doc;
+  doc["Sensor1"] = medidas.corriente_mA;
+  doc["Sensor2"] = medidas.corriente_b_mA;
+  doc["Sensor3"] = medidas.corriente_c_mA;
+  doc["Sensor4"] = medidas.corriente_d_mA;
+  serializeJson(doc, json);
+  //Serial.println(json);
+  return json;
+}
+
+
+void callback(char* topic, byte* payload, unsigned int length)
+{
+  String conc_payload;
+  if (strcmp(topic, envio_datos_topic) == 0)
+  { for (int i = 0; i < length; i++) {
+      conc_payload += (char)payload[i];
+    }
+    topic_recibido = topic;
+    payload_envio = conc_payload;
+  }
+  else if (strcmp(topic, almacenamiento_datos_topic) == 0)
+  { for (int i = 0; i < length; i++) {
+      conc_payload += (char)payload[i];
+    }
+    topic_recibido = topic;
+    payload_almacenamiento = conc_payload;
+  }
+  Serial.print("Comando recibido de MQTT broker es : [");
+  Serial.print(topic);
+  Serial.println("] ");
+
+  delay (10);
+}
 void loop(void)
 {
   struct conjunto_corrientes medidas;
@@ -144,7 +255,7 @@ void loop(void)
   medidas.corriente_c_mA = ina219_c.getCurrent_mA();
   medidas.corriente_d_mA = ina219_d.getCurrent_mA();
 
-  
+
   // Limpiar buffer
   display.clearDisplay();
   //Sensor 1
@@ -162,6 +273,7 @@ void loop(void)
   // Enviar a pantalla
   display.display();
 
+  if (payload_almacenamiento == "Activar"){
   memoria = SD.open("datos.txt", FILE_WRITE); // apertura para lectura/escritura de archivo datos.txt
   if (memoria) {
     Serial.println("Guardando datos en memoria microSD ");
@@ -210,95 +322,15 @@ void loop(void)
   {
     Serial.println("error en apertura de datos.txt");  // texto de falla en apertura de archivo
   }
-  
+  }
   if (!client.connected()) {
     reconnect();
   }
 
   client.loop();
-  
-  client.publish(consumo_topic, SerializeMedidas(medidas).c_str(), true);
-
-  delay(2000);
-}
-
-String Obtener_Fecha(time_t local)
-{
-  // now format the Time variables into strings with proper names for month, day etc
-  date = "";
-  if (day(local) < 10)
-  date += "0";
-  date += day(local);
-  date += "/";
-  if (month(local) < 10)
-  date += "0";
-  date += month(local);
-  date += "/";
-  date += year(local);
-  return date;
-}
-
-String Obtener_Hora(time_t local)
-{
-  t = "";
-  // format the time
-  if (hour(local) < 10)
-    t += "0";
-  t += hour(local);
-  t += ":";
-  if (minute(local) < 10) // add a zero if minute is under 10
-    t += "0";
-  t += minute(local);
-  t += ":";
-  if (second(local) < 10)
-    t += "0";
-  t += second(local);
-  return t;
-}
-
-void reconnect() {
-  // BUCLE DE CHECKING DE CONEXIÓN AL SERVICIO MQTT
-  while (!client.connected()) {
-    Serial.print("Intentando conectarse a MQTT...");
-    
-    // Generación del nombre del cliente en función de la dirección MAC y los ultimos 8 bits del contador temporal
-    String clientId = "ESP8266Client-";
-    clientId += String(ESP.getChipId());
-    Serial.print("Conectando a ");
-    Serial.print(mqtt_server);
-    Serial.print(" como ");
-    Serial.println(clientId);
-
-    // Intentando conectar
-    if (client.connect(clientId.c_str(), mqtt_user, mqtt_password)) {
-      Serial.println("Conectado");
-     
-    } else {
-      Serial.print("Conexión Fallida, rc=");
-      Serial.print(client.state());
-      Serial.println(" Volver a probar en 5 segundos");
-      // Espera 5s antes de reintentar conexión
-      delay(5000);
-    }
+  if (payload_envio == "Activar")
+  { 
+    client.publish(consumo_topic, SerializeMedidas(medidas).c_str(), true);
   }
-
-}
-
-String SerializeMedidas(struct conjunto_corrientes medidas )
-{
-    String json;
-    StaticJsonDocument<512> doc;
-    doc["Sensor1"] = medidas.corriente_mA;
-    doc["Sensor2"] = medidas.corriente_b_mA;
-    doc["Sensor3"] = medidas.corriente_c_mA;
-    doc["Sensor4"] = medidas.corriente_d_mA;
-    serializeJson(doc, json);
-    Serial.println(json);
-    return json;
-}
-
-void callback(char* topic, byte* payload, unsigned int length)
-{
-
-  
+  delay(2000);
 }
