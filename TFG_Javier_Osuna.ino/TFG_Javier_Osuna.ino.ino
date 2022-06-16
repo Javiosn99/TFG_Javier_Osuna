@@ -60,7 +60,9 @@ PubSubClient client(espClient);
 // Topics a emplear
 #define consumo_topic "TFG/Consumos"
 #define envio_datos_topic "TFG/Envio_datos"
+#define envio_tiempo_topic "TFG/Envio_tiempo"
 #define almacenamiento_datos_topic "TFG/Almacenamiento_datos"
+#define almacenamiento_tiempo_topic "TFG/Almacenamiento_tiempo"
 
 // Convertir las unidades de tiempo UTC en local
 TimeChangeRule CEST = {"CEST", Last, Sun, Mar, 2, 60};  //Horario de verano en europa central, "Eurepan Central Summer Time"
@@ -75,9 +77,24 @@ struct conjunto_corrientes
   float corriente_d_mA;
 };
 
+// Se declaran las variables donde se almacenan los payload recibidos por mqtt
 String payload_envio;
 String payload_almacenamiento;
 String topic_recibido;
+
+//Se declaran las variables que indican los tiempos de bucle. De forma predeterminada el envio será de medio segundo.
+//Se actualiza por pantalla y se almacena cada segundo.
+int TiempoMuestreo = 0;
+unsigned long PeriodoMuestreo = 100;
+
+int TiempoPantalla = 0;
+unsigned long PeriodoPantalla = 1000;
+
+int TiempoEnvio = 0;
+unsigned long PeriodoEnvio = 500;
+
+int TiempoAlmacenamiento = 0;
+unsigned long PeriodoAlmacenamiento = 1000;
 
 void setup(void)
 {
@@ -115,7 +132,6 @@ void setup(void)
   display.setTextColor(SSD1306_WHITE);
   // Posición del texto
 
-  display.setCursor(32, 16); display.println("CARGANDO DATOS");
   delay(200);
 
   Serial.println("Inicializando tarjeta ...");  // texto en ventana de monitor
@@ -195,7 +211,9 @@ void reconnect() {
     if (client.connect(clientId.c_str(), mqtt_user, mqtt_password)) {
       Serial.println("Conectado");
       client.subscribe(envio_datos_topic);
+      client.subscribe(envio_tiempo_topic);
       client.subscribe(almacenamiento_datos_topic);
+      client.subscribe(almacenamiento_tiempo_topic);
 
     } else {
       Serial.print("Conexión Fallida, rc=");
@@ -229,108 +247,147 @@ void callback(char* topic, byte* payload, unsigned int length)
   { for (int i = 0; i < length; i++) {
       conc_payload += (char)payload[i];
     }
-    topic_recibido = topic;
     payload_envio = conc_payload;
   }
   else if (strcmp(topic, almacenamiento_datos_topic) == 0)
   { for (int i = 0; i < length; i++) {
       conc_payload += (char)payload[i];
     }
-    topic_recibido = topic;
     payload_almacenamiento = conc_payload;
   }
+
   Serial.print("Comando recibido de MQTT broker es : [");
   Serial.print(topic);
   Serial.println("] ");
+
+  if (payload_envio == "Activar")
+  {
+    if (strcmp(topic, envio_tiempo_topic) == 0)
+    {
+      for (int i = 0; i < length; i++) {
+        conc_payload += (char)payload[i];
+      }
+      PeriodoEnvio = conc_payload.toInt();
+      Serial.print("Comando recibido de MQTT broker es : [");
+      Serial.print(topic);
+      Serial.println("] ");
+
+      Serial.println (PeriodoEnvio);
+    }
+  }
+
+  if (payload_almacenamiento == "Activar")
+  {
+    if (strcmp(topic, almacenamiento_tiempo_topic) == 0)
+    {
+      for (int i = 0; i < length; i++) {
+        conc_payload += (char)payload[i];
+      }
+      PeriodoAlmacenamiento = conc_payload.toInt();
+      Serial.print("Comando recibido de MQTT broker es : [");
+      Serial.print(topic);
+      Serial.println("] ");
+
+      Serial.println (PeriodoAlmacenamiento);
+    }
+  }
 
   delay (10);
 }
 void loop(void)
 {
   struct conjunto_corrientes medidas;
+  
+    // Obtener mediciones
+    medidas.corriente_mA = ina219.getCurrent_mA();
+    medidas.corriente_b_mA = ina219_b.getCurrent_mA();
+    medidas.corriente_c_mA = ina219_c.getCurrent_mA();
+    medidas.corriente_d_mA = ina219_d.getCurrent_mA();
 
-  // Obtener mediciones
-  medidas.corriente_mA = ina219.getCurrent_mA();
-  medidas.corriente_b_mA = ina219_b.getCurrent_mA();
-  medidas.corriente_c_mA = ina219_c.getCurrent_mA();
-  medidas.corriente_d_mA = ina219_d.getCurrent_mA();
+  if (millis() >= PeriodoPantalla + TiempoPantalla) {
+    TiempoPantalla = millis();
+    // Limpiar buffer
+    display.clearDisplay();
+    //Sensor 1
+    display.setCursor(0, 0); display.println("SENSOR 1");
+    display.setCursor(0, 16); display.print(medidas.corriente_mA); display.println(" mA");
+    //Sensor 2
+    display.setCursor(64, 0); display.println("SENSOR 2");
+    display.setCursor(64, 16); display.print(medidas.corriente_b_mA); display.println(" mA");
+    //Sensor 3
+    display.setCursor(0, 32); display.println("SENSOR 3");
+    display.setCursor(0, 48); display.print(medidas.corriente_c_mA); display.println(" mA");
+    //Sensor 4
+    display.setCursor(64, 32); display.println("SENSOR 4");
+    display.setCursor(64, 48); display.print(medidas.corriente_d_mA); display.println(" mA");
+    // Enviar a pantalla
+    display.display();
+  }
 
+  if (millis() >= PeriodoAlmacenamiento + TiempoAlmacenamiento) {
+    TiempoAlmacenamiento = millis();
+    if (payload_almacenamiento == "Activar") {
+      memoria = SD.open("datos.txt", FILE_WRITE); // apertura para lectura/escritura de archivo datos.txt
+      if (memoria) {
+        Serial.println("Guardando datos en memoria microSD ");
+        if (WiFi.status() == WL_CONNECTED) //Check WiFi connection status
+        {
+          timeClient.update(); //sincronizamos con el server NTP
+          unsigned long epochTime =  timeClient.getEpochTime();
 
-  // Limpiar buffer
-  display.clearDisplay();
-  //Sensor 1
-  display.setCursor(0, 0); display.println("SENSOR 1");
-  display.setCursor(0, 16); display.print(medidas.corriente_mA); display.println(" mA");
-  //Sensor 2
-  display.setCursor(64, 0); display.println("SENSOR 2");
-  display.setCursor(64, 16); display.print(medidas.corriente_b_mA); display.println(" mA");
-  //Sensor 3
-  display.setCursor(0, 32); display.println("SENSOR 3");
-  display.setCursor(0, 48); display.print(medidas.corriente_c_mA); display.println(" mA");
-  //Sensor 4
-  display.setCursor(64, 32); display.println("SENSOR 4");
-  display.setCursor(64, 48); display.print(medidas.corriente_d_mA); display.println(" mA");
-  // Enviar a pantalla
-  display.display();
+          // convert received time stamp to time_t object
+          time_t local, utc;
+          utc = epochTime;
+          local = CE.toLocal(utc);
 
-  if (payload_almacenamiento == "Activar"){
-  memoria = SD.open("datos.txt", FILE_WRITE); // apertura para lectura/escritura de archivo datos.txt
-  if (memoria) {
-    Serial.println("Guardando datos en memoria microSD ");
-    if (WiFi.status() == WL_CONNECTED) //Check WiFi connection status
-    {
-      timeClient.update(); //sincronizamos con el server NTP
-      unsigned long epochTime =  timeClient.getEpochTime();
+          Obtener_Fecha(local);
+          Obtener_Hora(local);
 
-      // convert received time stamp to time_t object
-      time_t local, utc;
-      utc = epochTime;
-      local = CE.toLocal(utc);
+          // Mostrar en pantalla fecha y hora
+          Serial.print(date);
+          Serial.print(" ");
+          Serial.print(t);
+          // Mostrar en tarjeta de almacenamiento fecha y hora
+          memoria.print(date);
+          memoria.print(" ");
+          memoria.print(t);
+        }
+        else
+        {
+          Serial.print("FalloConexiónWifi ");
+          memoria.print("FalloConexiónWifi ");
+        }
 
-      Obtener_Fecha(local);
-      Obtener_Hora(local);
+        memoria.print("   SENSOR 1: "); memoria.print(medidas.corriente_mA);   memoria.print(" mA   ");
+        memoria.print("SENSOR 2: "); memoria.print(medidas.corriente_b_mA); memoria.print(" mA   ");
+        memoria.print("SENSOR 3: "); memoria.print(medidas.corriente_c_mA); memoria.print(" mA   ");
+        memoria.print("SENSOR 4: "); memoria.print(medidas.corriente_d_mA); memoria.println(" mA   ");
 
-      // Mostrar en pantalla fecha y hora
-      Serial.print(date);
-      Serial.print(" ");
-      Serial.print(t);
-      // Mostrar en tarjeta de almacenamiento fecha y hora
-      memoria.print(date);
-      memoria.print(" ");
-      memoria.print(t);
+        // Mostrar mediciones
+        Serial.print(" Sensor 1:  "); Serial.print(medidas.corriente_mA);   Serial.print(" mA   ");
+        Serial.print("Sensor 2:  "); Serial.print(medidas.corriente_b_mA); Serial.print(" mA   ");
+        Serial.print("Sensor 3:  "); Serial.print(medidas.corriente_c_mA); Serial.print(" mA   ");
+        Serial.print("Sensor 4:  "); Serial.print(medidas.corriente_d_mA); Serial.println(" mA");
+
+        memoria.close(); //cierra el archivo y garantiza que se escriban los datos correctamente
+      }
+      else
+      {
+        Serial.println("error en apertura de datos.txt");  // texto de falla en apertura de archivo
+      }
     }
-    else
-    {
-      Serial.print("FalloConexiónWifi ");
-      memoria.print("FalloConexiónWifi ");
+    if (!client.connected()) {
+      reconnect();
     }
-
-    memoria.print("   SENSOR 1: "); memoria.print(medidas.corriente_mA);   memoria.print(" mA   ");
-    memoria.print("SENSOR 2: "); memoria.print(medidas.corriente_b_mA); memoria.print(" mA   ");
-    memoria.print("SENSOR 3: "); memoria.print(medidas.corriente_c_mA); memoria.print(" mA   ");
-    memoria.print("SENSOR 4: "); memoria.print(medidas.corriente_d_mA); memoria.println(" mA   ");
-
-    // Mostrar mediciones
-    Serial.print(" Sensor 1:  "); Serial.print(medidas.corriente_mA);   Serial.print(" mA   ");
-    Serial.print("Sensor 2:  "); Serial.print(medidas.corriente_b_mA); Serial.print(" mA   ");
-    Serial.print("Sensor 3:  "); Serial.print(medidas.corriente_c_mA); Serial.print(" mA   ");
-    Serial.print("Sensor 4:  "); Serial.print(medidas.corriente_d_mA); Serial.println(" mA");
-
-    memoria.close(); //cierra el archivo y garantiza que se escriban los datos correctamente
   }
-  else
-  {
-    Serial.println("error en apertura de datos.txt");  // texto de falla en apertura de archivo
-  }
-  }
-  if (!client.connected()) {
-    reconnect();
+
+  if (millis() >= PeriodoEnvio + TiempoEnvio) {
+    TiempoEnvio = millis();
+    if (payload_envio == "Activar")
+    {
+      client.publish(consumo_topic, SerializeMedidas(medidas).c_str(), true);
+    }
   }
 
   client.loop();
-  if (payload_envio == "Activar")
-  { 
-    client.publish(consumo_topic, SerializeMedidas(medidas).c_str(), true);
-  }
-  delay(2000);
 }
