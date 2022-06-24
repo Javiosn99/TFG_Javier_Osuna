@@ -17,6 +17,11 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
+#include "ESP8266FtpServer.h"
+//#include "ESP8266_Utils.hpp"
+
+FtpServer ftpSrv; //Instancia de la librería para tener acceso a sus funciones
+
 // Definir constantes
 #define ANCHO_PANTALLA 128 // ancho pantalla OLED
 #define ALTO_PANTALLA 64 // alto pantalla OLED
@@ -84,16 +89,14 @@ String topic_recibido;
 
 //Se declaran las variables que indican los tiempos de bucle. De forma predeterminada el envio será de medio segundo.
 //Se actualiza por pantalla y se almacena cada segundo.
-int TiempoMuestreo = 0;
-unsigned long PeriodoMuestreo = 100;
 
-int TiempoPantalla = 0;
+unsigned long TiempoPantalla = 0;
 unsigned long PeriodoPantalla = 1000;
 
-int TiempoEnvio = 0;
+unsigned long TiempoEnvio = 0;
 unsigned long PeriodoEnvio = 500;
 
-int TiempoAlmacenamiento = 0;
+unsigned long TiempoAlmacenamiento = 0;
 unsigned long PeriodoAlmacenamiento = 1000;
 
 void setup(void)
@@ -140,9 +143,17 @@ void setup(void)
     Serial.println("fallo en inicializacion !");// si falla se muestra texto correspondiente y
     return;        // impide que el programa avance
   }
-  Serial.println("inicializacion correcta");  // texto de inicializacion correcta
-  delay(200);
-
+  else {
+    Serial.println("inicializacion correcta");  // texto de inicializacion correcta
+    memoria = SD.open("datos.csv", FILE_WRITE);
+    if (memoria) {
+      memoria.print("FECHA ;"); memoria.print("HORA ;");   memoria.print("SENSOR 1 (mA) ;"); memoria.print("SENSOR 2 (mA) ;");
+      memoria.print("SENSOR 3 (mA) ;"); memoria.println("SENSOR 4 (mA) ;");
+      memoria.close();
+    }
+    ftpSrv.begin("admin", "admin");   //nombre de usuario, contraseña para ftp. establecer puerto en ESP8266FtpServer.h (predeterminado 21, 50009 para PASV)
+    delay(200);
+  }
   WiFi.begin(ssid, password); // nos conectamos al wifi
   // Esperamos hasta que se establezca la conexión wifi
   while ( WiFi.status() != WL_CONNECTED )
@@ -256,10 +267,6 @@ void callback(char* topic, byte* payload, unsigned int length)
     payload_almacenamiento = conc_payload;
   }
 
-  Serial.print("Comando recibido de MQTT broker es : [");
-  Serial.print(topic);
-  Serial.println("] ");
-
   if (payload_envio == "Activar")
   {
     if (strcmp(topic, envio_tiempo_topic) == 0)
@@ -268,10 +275,6 @@ void callback(char* topic, byte* payload, unsigned int length)
         conc_payload += (char)payload[i];
       }
       PeriodoEnvio = conc_payload.toInt();
-      Serial.print("Comando recibido de MQTT broker es : [");
-      Serial.print(topic);
-      Serial.println("] ");
-
       Serial.println (PeriodoEnvio);
     }
   }
@@ -284,25 +287,25 @@ void callback(char* topic, byte* payload, unsigned int length)
         conc_payload += (char)payload[i];
       }
       PeriodoAlmacenamiento = conc_payload.toInt();
-      Serial.print("Comando recibido de MQTT broker es : [");
-      Serial.print(topic);
-      Serial.println("] ");
-
       Serial.println (PeriodoAlmacenamiento);
     }
   }
+
+  Serial.print("Comando recibido de MQTT broker es : [");
+  Serial.print(topic);
+  Serial.println("] ");
 
   delay (10);
 }
 void loop(void)
 {
   struct conjunto_corrientes medidas;
-  
-    // Obtener mediciones
-    medidas.corriente_mA = ina219.getCurrent_mA();
-    medidas.corriente_b_mA = ina219_b.getCurrent_mA();
-    medidas.corriente_c_mA = ina219_c.getCurrent_mA();
-    medidas.corriente_d_mA = ina219_d.getCurrent_mA();
+
+  // Obtener mediciones
+  medidas.corriente_mA = ina219.getCurrent_mA();
+  medidas.corriente_b_mA = ina219_b.getCurrent_mA();
+  medidas.corriente_c_mA = ina219_c.getCurrent_mA();
+  medidas.corriente_d_mA = ina219_d.getCurrent_mA();
 
   if (millis() >= PeriodoPantalla + TiempoPantalla) {
     TiempoPantalla = millis();
@@ -326,8 +329,9 @@ void loop(void)
 
   if (millis() >= PeriodoAlmacenamiento + TiempoAlmacenamiento) {
     TiempoAlmacenamiento = millis();
+
     if (payload_almacenamiento == "Activar") {
-      memoria = SD.open("datos.txt", FILE_WRITE); // apertura para lectura/escritura de archivo datos.txt
+      memoria = SD.open("datos.csv", FILE_WRITE); // apertura para lectura/escritura de archivo datos.txt
       if (memoria) {
         Serial.println("Guardando datos en memoria microSD ");
         if (WiFi.status() == WL_CONNECTED) //Check WiFi connection status
@@ -349,8 +353,9 @@ void loop(void)
           Serial.print(t);
           // Mostrar en tarjeta de almacenamiento fecha y hora
           memoria.print(date);
-          memoria.print(" ");
+          memoria.print(";");
           memoria.print(t);
+          memoria.print(";");
         }
         else
         {
@@ -358,10 +363,10 @@ void loop(void)
           memoria.print("FalloConexiónWifi ");
         }
 
-        memoria.print("   SENSOR 1: "); memoria.print(medidas.corriente_mA);   memoria.print(" mA   ");
-        memoria.print("SENSOR 2: "); memoria.print(medidas.corriente_b_mA); memoria.print(" mA   ");
-        memoria.print("SENSOR 3: "); memoria.print(medidas.corriente_c_mA); memoria.print(" mA   ");
-        memoria.print("SENSOR 4: "); memoria.print(medidas.corriente_d_mA); memoria.println(" mA   ");
+        memoria.print(medidas.corriente_mA); memoria.print(";");
+        memoria.print(medidas.corriente_b_mA); memoria.print(";");
+        memoria.print(medidas.corriente_c_mA); memoria.print(";");
+        memoria.print(medidas.corriente_d_mA); memoria.println(";");
 
         // Mostrar mediciones
         Serial.print(" Sensor 1:  "); Serial.print(medidas.corriente_mA);   Serial.print(" mA   ");
@@ -389,5 +394,7 @@ void loop(void)
     }
   }
 
+
+  ftpSrv.handleFTP();
   client.loop();
 }
