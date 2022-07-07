@@ -82,6 +82,22 @@ struct conjunto_corrientes
   float corriente_d_mA;
 };
 
+struct conjunto_voltajes
+{
+  float voltaje_V;
+  float voltaje_b_V;
+  float voltaje_c_V;
+  float voltaje_d_V;
+};
+
+struct conjunto_potencias
+{
+  float potencia_mW;
+  float potencia_b_mW;
+  float potencia_c_mW;
+  float potencia_d_mW;
+};
+
 // Se declaran las variables donde se almacenan los payload recibidos por mqtt
 String payload_envio;
 String payload_almacenamiento;
@@ -91,13 +107,15 @@ String topic_recibido;
 //Se actualiza por pantalla y se almacena cada segundo.
 
 unsigned long TiempoPantalla = 0;
-unsigned long PeriodoPantalla = 1000;
+unsigned long PeriodoPantalla = 10000;
 
 unsigned long TiempoEnvio = 0;
 unsigned long PeriodoEnvio = 500;
 
 unsigned long TiempoAlmacenamiento = 0;
 unsigned long PeriodoAlmacenamiento = 1000;
+
+unsigned cont = 1;
 
 void setup(void)
 {
@@ -145,12 +163,7 @@ void setup(void)
   }
   else {
     Serial.println("inicializacion correcta");  // texto de inicializacion correcta
-    memoria = SD.open("datos.csv", FILE_WRITE);
-    if (memoria) {
-      memoria.print("FECHA ;"); memoria.print("HORA ;");   memoria.print("SENSOR 1 (mA) ;"); memoria.print("SENSOR 2 (mA) ;");
-      memoria.print("SENSOR 3 (mA) ;"); memoria.println("SENSOR 4 (mA) ;");
-      memoria.close();
-    }
+    
     ftpSrv.begin("admin", "admin");   //nombre de usuario, contraseña para ftp. establecer puerto en ESP8266FtpServer.h (predeterminado 21, 50009 para PASV)
     delay(200);
   }
@@ -237,14 +250,14 @@ void reconnect() {
 
 }
 
-String SerializeMedidas(struct conjunto_corrientes medidas )
+String SerializeMedidas(struct conjunto_potencias medidas_P )
 {
   String json;
   StaticJsonDocument<512> doc;
-  doc["Sensor1"] = medidas.corriente_mA;
-  doc["Sensor2"] = medidas.corriente_b_mA;
-  doc["Sensor3"] = medidas.corriente_c_mA;
-  doc["Sensor4"] = medidas.corriente_d_mA;
+  doc["Sensor1"] = medidas_P.potencia_mW;
+  doc["Sensor2"] = medidas_P.potencia_b_mW;
+  doc["Sensor3"] = medidas_P.potencia_c_mW;
+  doc["Sensor4"] = medidas_P.potencia_d_mW;
   serializeJson(doc, json);
   //Serial.println(json);
   return json;
@@ -299,41 +312,104 @@ void callback(char* topic, byte* payload, unsigned int length)
 }
 void loop(void)
 {
-  struct conjunto_corrientes medidas;
+  struct conjunto_corrientes medidas_I;
+  struct conjunto_voltajes medidas_V;
+  struct conjunto_potencias medidas_P;
 
   // Obtener mediciones
-  medidas.corriente_mA = ina219.getCurrent_mA();
-  medidas.corriente_b_mA = ina219_b.getCurrent_mA();
-  medidas.corriente_c_mA = ina219_c.getCurrent_mA();
-  medidas.corriente_d_mA = ina219_d.getCurrent_mA();
+  medidas_I.corriente_mA = ina219.getCurrent_mA();
+  medidas_I.corriente_b_mA = ina219_b.getCurrent_mA();
+  medidas_I.corriente_c_mA = ina219_c.getCurrent_mA();
+  medidas_I.corriente_d_mA = ina219_d.getCurrent_mA();
+
+  medidas_V.voltaje_V = ina219.getBusVoltage_V();
+  medidas_V.voltaje_b_V = ina219_b.getBusVoltage_V();
+  medidas_V.voltaje_c_V = ina219_c.getBusVoltage_V();
+  medidas_V.voltaje_d_V = ina219_d.getBusVoltage_V();
+
+  medidas_P.potencia_mW = ina219.getPower_mW();
+  medidas_P.potencia_b_mW = ina219_b.getPower_mW();
+  medidas_P.potencia_c_mW = ina219_c.getPower_mW();
+  medidas_P.potencia_d_mW = ina219_d.getPower_mW();
 
   if (millis() >= PeriodoPantalla + TiempoPantalla) {
     TiempoPantalla = millis();
+
+    if ( cont == 1)
+    {
     // Limpiar buffer
     display.clearDisplay();
     //Sensor 1
-    display.setCursor(0, 0); display.println("SENSOR 1");
-    display.setCursor(0, 16); display.print(medidas.corriente_mA); display.println(" mA");
+    display.setCursor(40, 0); display.println("SENSOR 1");
+    display.setCursor(40, 16); display.print(medidas_P.potencia_mW); display.println(" mW");
     //Sensor 2
-    display.setCursor(64, 0); display.println("SENSOR 2");
-    display.setCursor(64, 16); display.print(medidas.corriente_b_mA); display.println(" mA");
+    display.setCursor(40, 32); display.print(medidas_V.voltaje_V); display.println(" V");
     //Sensor 3
-    display.setCursor(0, 32); display.println("SENSOR 3");
-    display.setCursor(0, 48); display.print(medidas.corriente_c_mA); display.println(" mA");
-    //Sensor 4
-    display.setCursor(64, 32); display.println("SENSOR 4");
-    display.setCursor(64, 48); display.print(medidas.corriente_d_mA); display.println(" mA");
-    // Enviar a pantalla
+    display.setCursor(40, 48); display.print(medidas_I.corriente_mA); display.println(" mA");
+
     display.display();
+    cont = 2;
+    }
+      else if ( cont == 2)
+    {
+    // Limpiar buffer
+    display.clearDisplay();
+    //Sensor 1
+    display.setCursor(40, 0); display.println("SENSOR 2");
+    display.setCursor(40, 16); display.print(medidas_P.potencia_b_mW); display.println(" mW");
+    //Sensor 2
+    display.setCursor(40, 32); display.print(medidas_V.voltaje_b_V); display.println(" V");
+    //Sensor 3
+    display.setCursor(40, 48); display.print(medidas_I.corriente_b_mA); display.println(" mA");
+
+    display.display();
+    cont = 3;
+    }
+      else if ( cont == 3)
+    {
+    // Limpiar buffer
+    display.clearDisplay();
+    //Sensor 1
+    display.setCursor(40, 0); display.println("SENSOR 3");
+    display.setCursor(40, 16); display.print(medidas_P.potencia_c_mW); display.println(" mW");
+    //Sensor 2
+    display.setCursor(40, 32); display.print(medidas_V.voltaje_c_V); display.println(" V");
+    //Sensor 3
+    display.setCursor(40, 48); display.print(medidas_I.corriente_c_mA); display.println(" mA");
+
+    display.display();
+    cont = 4;
+    }
+      else 
+    {
+    // Limpiar buffer
+    display.clearDisplay();
+    //Sensor 1
+    display.setCursor(40, 0); display.println("SENSOR 4");
+    display.setCursor(40, 16); display.print(medidas_P.potencia_d_mW); display.println(" mW");
+    //Sensor 2
+    display.setCursor(40, 32); display.print(medidas_V.voltaje_d_V); display.println(" V");
+    //Sensor 3
+    display.setCursor(40, 48); display.print(medidas_I.corriente_d_mA); display.println(" mA");
+
+    display.display();
+    cont = 1;
+    }
   }
 
   if (millis() >= PeriodoAlmacenamiento + TiempoAlmacenamiento) {
     TiempoAlmacenamiento = millis();
 
     if (payload_almacenamiento == "Activar") {
-      memoria = SD.open("datos.csv", FILE_WRITE); // apertura para lectura/escritura de archivo datos.txt
+      memoria = SD.open("datos.csv", FILE_WRITE); // apertura para lectura/escritura de archivo datos.csv
       if (memoria) {
+       
         Serial.println("Guardando datos en memoria microSD ");
+        if (memoria.size() == 0)
+      {
+      memoria.print("FECHA ;"); memoria.print("HORA ;");   memoria.print("SENSOR 1 (mA) ;"); memoria.print("SENSOR 2 (mA) ;");
+      memoria.print("SENSOR 3 (mA) ;"); memoria.println("SENSOR 4 (mA) ;");
+      }
         if (WiFi.status() == WL_CONNECTED) //Check WiFi connection status
         {
           timeClient.update(); //sincronizamos con el server NTP
@@ -363,17 +439,18 @@ void loop(void)
           memoria.print("FalloConexiónWifi ");
         }
 
-        memoria.print(medidas.corriente_mA); memoria.print(";");
-        memoria.print(medidas.corriente_b_mA); memoria.print(";");
-        memoria.print(medidas.corriente_c_mA); memoria.print(";");
-        memoria.print(medidas.corriente_d_mA); memoria.println(";");
+        memoria.print(medidas_P.potencia_mW); memoria.print(";");
+        memoria.print(medidas_P.potencia_b_mW); memoria.print(";");
+        memoria.print(medidas_P.potencia_c_mW); memoria.print(";");
+        memoria.print(medidas_P.potencia_d_mW); memoria.println(";");
 
         // Mostrar mediciones
-        Serial.print(" Sensor 1:  "); Serial.print(medidas.corriente_mA);   Serial.print(" mA   ");
-        Serial.print("Sensor 2:  "); Serial.print(medidas.corriente_b_mA); Serial.print(" mA   ");
-        Serial.print("Sensor 3:  "); Serial.print(medidas.corriente_c_mA); Serial.print(" mA   ");
-        Serial.print("Sensor 4:  "); Serial.print(medidas.corriente_d_mA); Serial.println(" mA");
-
+        Serial.print(" Sensor 1:  "); Serial.print(medidas_P.potencia_mW);   Serial.print(" mW   ");
+        //Serial.print("Sensor 2:  "); Serial.print(medidas_P.potencia_b_mW); Serial.print(" mW   ");
+        //Serial.print("Sensor 3:  "); Serial.print(medidas_P.potencia_c_mW); Serial.print(" mW   ");
+        //Serial.print("Sensor 4:  "); Serial.print(medidas_P.potencia_d_mW); Serial.println(" mW");
+        Serial.print("Sensor 2:  "); Serial.print(medidas_V.voltaje_V); Serial.print(" V   ");
+        Serial.print("Sensor 2:  "); Serial.print(medidas_I.corriente_mA); Serial.print(" mA  ");
         memoria.close(); //cierra el archivo y garantiza que se escriban los datos correctamente
       }
       else
@@ -390,7 +467,7 @@ void loop(void)
     TiempoEnvio = millis();
     if (payload_envio == "Activar")
     {
-      client.publish(consumo_topic, SerializeMedidas(medidas).c_str(), true);
+      client.publish(consumo_topic, SerializeMedidas(medidas_P).c_str(), true);
     }
   }
 
